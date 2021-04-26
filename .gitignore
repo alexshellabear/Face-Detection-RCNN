@@ -1,0 +1,14 @@
+*.jpg
+*.png
+*.csv
+*.h5
+*.p
+2. Models/**
+1. Data Gen/1. Data/**
+1. Data Gen/2. Data for Predictions/**
+1. Data Gen/3. Data From Predictions/**
+2. Data Gen/**
+*3. Video Archive*
+video ideas.txt
+readme copy.txt
+*.vscode
