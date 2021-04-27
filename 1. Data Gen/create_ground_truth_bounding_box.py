@@ -157,11 +157,8 @@ def draw_and_save_callback(event,mouseX,mouseY,flags,param):
 
 def get_list_of_unlabeled_data():
     """
-        Loop through data and find image files & corresponding csv files. For those that HAVE corresponding file extensions remove from list
-
-        Assumptions
-            1) Those images which have a ground truth will have the same file name but with a csv file extension
-            2) Length of the image list and label list should be the same
+        Description: Loop through data and find image files & corresponding csv files. For those that HAVE corresponding file extensions remove from list
+        Assumption 1: Those images which have a ground truth will have the same file name but with a csv file extension
     """
     list_of_imgs = []
     list_of_img_labels = []

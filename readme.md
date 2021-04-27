@@ -23,8 +23,13 @@
     Make your current working directory when running scripts the same as the one readme.md (this file) is stored in
         Psst you can check using os.getcwd()
     1) Take a bunch of photos of your face and drop them into the path "1. Data Gen\1. Data"
-    2) Run the python script "1. Data Gen\create_ground_truth_bounding_box.py" this is a labelling tool that wcan enable you to label data.
+    2) Run the python script "1. Data Gen\create_ground_truth_bounding_box.py" this is a labelling tool that can enable you to label data.
         Assumption 1: Every image name is unique
+        Assumption 2: There is only one object in a frame at a time
+        Note 1: It will resize your images to fix the screen hence it will have much lower resolution so that I have to do less programming. 
+        Note 2: It will run through all of those files that do not have a corresponding .csv file (hence they are assumed not to have been labelled). If you want to re-label them
+    3) Look at the tutorial image below.
+        ![Tutorial Image](/1. Data Gen/Ground Truth Tutorial.png)
 
 
 
