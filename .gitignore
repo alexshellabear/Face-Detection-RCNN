@@ -3,6 +3,7 @@
 *.csv
 *.h5
 *.p
+*.pptx
 2. Models/**
 1. Data Gen/1. Data/**
 1. Data Gen/2. Data for Predictions/**
@@ -12,3 +13,4 @@
 video ideas.txt
 readme copy.txt
 *.vscode
+!1. Data Gen/Ground Truth Tutorial.png

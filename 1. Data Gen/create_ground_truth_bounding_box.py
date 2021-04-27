@@ -25,7 +25,7 @@ import os
         2) No duplicate names
         
     Lessons Learnt
-        1) CV2 has a call back function for the window
+        1) CV2 has a call back function for the window for on click events
         2) How to detect combinations of keys with cv2
             https://stackoverflow.com/questions/58408096/python-how-to-detect-key-combinations-with-opencv-waitkey-library
         3) How to detect shift key press using waitKey in cv2
@@ -39,6 +39,7 @@ config = {
     "ImagePath" : "1. Data Gen\\1. Data\\test_cap.PNG"
     ,"DataDirectory" : "1. Data Gen\\1. Data" 
     ,"WindowName" : "Select Bounding Box"
+    ,"PathToTutorial" : "1. Data Gen\\Ground Truth Tutorial.png"
     ,"UpKey" : 2490368
     ,"LeftKey" : 2424832
     ,"DownKey" : 2621440
@@ -181,8 +182,20 @@ def get_list_of_unlabeled_data():
 
     return list_of_imgs_with_no_label 
 
+def display_tutorial():
+    """
+        Description: Displays a tutorial image which shows how to use the labelling tool until any key is pressed.
+    """
+    tutorial_image = cv2.imread(config["PathToTutorial"])
+    cv2.imshow(config["WindowName"])
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
 if __name__ == "__main__":
     print('starting...')
+
+    display_tutorial()
 
     list_of_imgs = get_list_of_unlabeled_data()
     

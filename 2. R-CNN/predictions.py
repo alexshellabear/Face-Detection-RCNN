@@ -12,7 +12,8 @@ import pickle
         Load the already trained model and test against another image
 
     Lessons Learnt
-        1) Must have TF imported otherwise it will not run because of the lambda layer
+        1) Must have tensorflow imported otherwise it will not run because of the lambda layer which comes from the tensorflow module
+        2) When creating a pitch black zeros cv2 image use np.zeroes((width,height),dtype=np.uint8), it defaults to float which is between 0 and 1 not 0 - 255 like what you're used to
 """
 
 config = {
@@ -21,6 +22,9 @@ config = {
     ,"ClassifierInput" : (224,224)
     , "ModelInput" : (224,224)
     ,"OutputSaveLocation" : "1. Data Gen\\3. Data From Predictions"
+    ,"InputImageFiles" : "1. Data Gen\\2. Data for Predictions"
+    ,"ValidImageFileExtensions" : [".jpg",".png"]
+    ,"ValidPredictionFileExtensions" : [".p"]
 }
 
 def get_resized_img_to_model(image,box,resize_dimensions=(224,224)):
@@ -92,111 +96,109 @@ def get_nearest_box(img, previous_predictions_list,previous_boxes):
     chosen_box_to_search = potential_boxes[max_index]
     return chosen_box_to_search, fore_max, potential_steps_predictions, potential_boxes
 
+def create_mask(base_img,box,pixel_colour:int):
+    height, width, _ = base_img.shape
+    x,y,w,h = box
+    print(box)
+    mask = np.zeros((height, width),dtype=np.uint8)
+    mask[y:y+h, x:x+w] = pixel_colour
+    return mask
 
+def get_list_of_images_not_predicted():
+    """
+        Get those images in the to be predicted folder that are images and make predictions based upon those that do not already have predictions
+
+        Assumptions
+            1) Each image name is unique
+            2) the image predictions is in another folder with the same basename as the image file but with a different file extension, this time .p
+    """
+    list_of_imgs = []
+    for root, dirs, files in os.walk(config["InputImageFiles"], topdown=False):
+        for f in files:
+            ext = os.path.splitext(f)[-1].lower()
+            if ext in config["ValidImageFileExtensions"]:
+                list_of_imgs.append(os.path.join(root, f))
+
+    list_of_img_predictions = []
+    for root, dirs, files in os.walk(config["OutputSaveLocation"], topdown=False):
+        for f in files:
+            ext = os.path.splitext(f)[-1].lower()
+            if ext in config["ValidPredictionFileExtensions"]:
+                list_of_img_predictions.append(os.path.join(root, f))
+
+    list_of_imgs_with_no_saved_predictions = []
+    for img_full_file_name in list_of_imgs:
+        img_ext = os.path.splitext(img_full_file_name)[1].lower()
+        img_base_name = os.path.basename(img_full_file_name)[:-len(img_ext)]
+
+        prediction_base_file_names = [os.path.basename(v)[:-len(".p")] for v in list_of_img_predictions]
+        if not img_base_name in prediction_base_file_names:
+            list_of_imgs_with_no_saved_predictions.append(img_full_file_name)
+
+    return list_of_imgs_with_no_saved_predictions 
 
 if __name__ == "__main__":
-    model = models.load_model(config["ModelPath"])
-    img = cv2.imread(config["InputFIle"])
-
-    selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
-    selective_search.setBaseImage(img)
-    selective_search.switchToSelectiveSearchFast() # lower likelihood of getting correct bounding boxes but quicker
-    rects = selective_search.process()
-
-    cropped_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in rects]
-    prediction_ready_images = np.array([applications.vgg16.preprocess_input(img) for img in cropped_images])
-    predictions = model.predict(prediction_ready_images) # Takes the longest time!
-
-    #predictions = pickle.load(open("1. Data Gen\\3. Data From Predictions\\WIN_20210426_12_27_45_Pro.p","rb"))["Predictions"]
-    file_ext = os.path.splitext(config["InputFIle"])[-1].lower()
-    base_file_name = os.path.basename(config["InputFIle"])[:-len(file_ext)]
-
-
-    predictions_data_dump = {
-        "ImageName" :  base_file_name
-        ,"FileExtension" : file_ext
-        ,"CV2Image" : img
-        ,"Rectangles" : rects
-        ,"Predictions" : predictions
-    }
-    #pickle.dump(predictions_data_dump,open( config["OutputSaveLocation"]+os.sep+predictions_data_dump["ImageName"]+".p", "wb" ))
-
-    _, foreground_max = predictions.max(axis=0)
-    max_index = [i for i,v in enumerate(predictions) if v[1] == foreground_max][0]
-
-    foreground_predictions_with_index = [[i,v[1]] for i,v in enumerate(list(predictions))]
-    sorted_foreground_predictions_with_index = sorted(foreground_predictions_with_index, reverse=True,key=lambda x: x[1])
-
-    for index_and_prediction in sorted_foreground_predictions_with_index[:100]:
-        index, prediction_result = index_and_prediction
-        shown_image = img.copy()
-        x,y,w,h = rects[index]
-        cv2.rectangle(shown_image,(x,y),(x+w,y+h),(255,255,255),1)
-        print(f"[{index}]={prediction_result}")
-        cv2.imshow(f"Image",shown_image)
-        cv2.waitKey(1000)
-
-    cv2.destroyAllWindows()
     
-    height, width, _ = img.shape
-    greyscale_mask = np.zeros((height, width))
-    increase = int(255/25)
-    for index_and_prediction in sorted_foreground_predictions_with_index[:25]:
-        index, prediction_result = index_and_prediction
-        x,y,w,h = rects[index]
-        rectangular_box_mask = greyscale_mask.copy()
-        cv2.rectangle(rectangular_box_mask,(x,y),(x+w,y+h),(255),1)
-        result = cv2.bitwise_and(greyscale_mask,rectangular_box_mask,mask = rectangular_box_mask)
-        cv2.imshow("masked result",result)
-        cv2.waitKey(10000)
-        cv2.destroyAllWindows()
+    images_to_predict = get_list_of_images_not_predicted()
+    for input_img_file in images_to_predict:
+        model = models.load_model(config["ModelPath"])
+        img = cv2.imread(config["InputFIle"])
+
+        selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
+        selective_search.setBaseImage(img)
+        selective_search.switchToSelectiveSearchFast() # lower likelihood of getting correct bounding boxes but quicker
+        rects = selective_search.process()
+
+        cropped_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in rects]
+        prediction_ready_images = np.array([applications.vgg16.preprocess_input(img) for img in cropped_images])
+        predictions = model.predict(prediction_ready_images) # Takes the longest time!
+
+        #predictions = pickle.load(open("1. Data Gen\\3. Data From Predictions\\WIN_20210426_12_27_45_Pro.p","rb"))["Predictions"] # TOO delete me later
+        file_ext = os.path.splitext(config["InputFIle"])[-1].lower()
+        base_file_name = os.path.basename(config["InputFIle"])[:-len(file_ext)]
+
+
+        predictions_data_dump = {
+            "ImageName" :  base_file_name
+            ,"FileExtension" : file_ext
+            ,"CV2Image" : img
+            ,"Rectangles" : rects
+            ,"Predictions" : predictions
+        }
         
-
-    """
-    already_predicted_index = [0] * len(rects)
-    random_search_step = 25
-    fore_max_threshold = 0.7
-    
-    predictions = np.array([])
-    search_start_index = 0
-    
-    for loop_num in range(1,int(len(cropped_images)/random_search_step)):
-        search_finish_index = random_search_step*loop_num
-        if loop_num == 1:
-            predictions = model.predict(prediction_ready_images[search_start_index:search_finish_index])
-        else:   
-            predictions = np.append(predictions, model.predict(prediction_ready_images[search_start_index:search_finish_index]),axis=0)
+        pickle.dump(predictions_data_dump,open( config["OutputSaveLocation"]+os.sep+predictions_data_dump["ImageName"]+".p", "wb" ))
 
         _, foreground_max = predictions.max(axis=0)
         max_index = [i for i,v in enumerate(predictions) if v[1] == foreground_max][0]
 
-        for i in range(search_start_index,search_finish_index):
-            print(f"Index [{i}] with likelihood of {predictions[i][1]}")
+        foreground_predictions_with_index = [[i,v[1]] for i,v in enumerate(list(predictions))]
+        sorted_foreground_predictions_with_index = sorted(foreground_predictions_with_index, reverse=True,key=lambda x: x[1])
 
-        already_predicted_index = [int(i <= search_finish_index and i>= search_start_index) for i,v in enumerate(already_predicted_index)]
-        print(f"loop [{loop_num}] [{search_start_index}-{search_finish_index}] max foreground likelihood is {foreground_max}")
+        pixel_colour = int(255/25)
+        bounding_box_masks = [create_mask(img,rects[i],pixel_colour) for i,v in sorted_foreground_predictions_with_index[:25]]
+        covered_area = sum(bounding_box_masks)
+        cv2.imshow("Heat Map of Top 25 Search Areas",covered_area)
+        cv2.waitKey(10000)
+        cv2.destroyAllWindows()
 
-        if foreground_max > fore_max_threshold:
-            print("Found suitable candidate")
-        search_start_index = search_finish_index
-    """
-    print("finish")
-    #cropped_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in rects]
-    #prediction_ready_images = np.array([applications.vgg16.preprocess_input(img) for img in cropped_images])
-    #predictions = model.predict(prediction_ready_images[:100]) # Only do 100 it is very time intensive to run the classifier
- 
-    #chosen_box, fore_max, previous_predictions_list, previous_boxes_list = get_nearest_box(img, predictions,rects)
-    #print(f"{chosen_box} {fore_max}")
+        height, width, _ = img.shape
+        covered_area = np.zeros((height, width),dtype=np.uint8)
+        for i,mask in enumerate(bounding_box_masks):
+            index, _ = sorted_foreground_predictions_with_index[i]
+            x,y,w,h = rects[index]
+            covered_area[y:y+h, x:x+w] = covered_area[y:y+h, x:x+w] + pixel_colour
+        
+        for index_and_prediction in sorted_foreground_predictions_with_index[:100]:
+            index, prediction_result = index_and_prediction
+            shown_image = img.copy()
+            x,y,w,h = rects[index]
+            cv2.rectangle(shown_image,(x,y),(x+w,y+h),(255,255,255),1)
+            print(f"[{index}]={prediction_result}")
+            cv2.imshow(f"Heat Map of top",shown_image)
+            cv2.waitKey(1000)
 
-    #chosen_box, fore_max, previous_predictions_list, previous_boxes_list = get_nearest_box(img, previous_predictions_list,previous_boxes_list)
-    #print(f"{chosen_box} {fore_max}")
-
-    """
-    cv2.rectangle(img, (chosen_box[0],chosen_box[1]), (chosen_box[0]+chosen_box[2],chosen_box[1]+chosen_box[3]), (255,255,255), 1)
-    cv2.imshow("Final Result",img)
-    cv2.waitKey(0)
-    bounding_box_result = []
-    """
+        cv2.destroyAllWindows()
+        
     print("Finishing")
 
      

@@ -21,6 +21,11 @@ import pickle
             https://stackoverflow.com/questions/31948528/python-loop-through-files-of-certain-extensions   
         4) Understanding selective search algorithms that are present in cv2
             https://learnopencv.com/selective-search-for-object-detection-cpp-python/ 
+        5) First set of training didn't go as well, most likely because the negative images chosen were not representative of the sample being chosen.
+            Using the precicted samples from the first iteration of training so I could determine what the model was. Hence the dataset needs to be more representative
+            proposed features
+                Scale
+
 """
 config = {
     "ImagePath" : "1. Data Gen\\1. Data\\WIN_20210216_09_48_49_Pro.jpg"
@@ -59,6 +64,7 @@ def get_list_of_data_and_labels():
         Assumptions
             1) Those images which have a ground truth will have the same file name but with a csv file extension
             2) Length of the image list and label list should be the same
+            
     """
     list_of_imgs = []
     list_of_img_labels = []
@@ -98,12 +104,39 @@ def read_img_labels(img_label_path):
     }
     return ground_truth_bounding_box
 
-def get_selective_search_labels(base_image,ground_truth_bounding_box,image_path):
+def get_rectangles_of_interest_using_selective_serach(base_image):
+    """
+        Description: Uses cv2's inbuilt fast selective search method to return potential rectangle of interest
+    """
     selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
     selective_search.setBaseImage(base_image)
     selective_search.switchToSelectiveSearchFast() # lower likelihood of getting correct bounding boxes but quicker
-    #selective_search.switchToSelectiveSearchQuality() # higher likelihood of getting correct bounding boxes but slower
-    rects = selective_search.process()
+    potential_rectangles_of_interest = selective_search.process()
+    return potential_rectangles_of_interest
+
+def create_more_foreground_samples_if_not_enough_exist(base_image,img_path,ground_truth_bounding_box,labels,min_num_foregrounds=50):
+    """
+        Purpose: Generates foreground labels from ground truth if there are not the minimum number of foreground labels generated from selective search method
+    """
+    foreground_labelled_imgs = len([v for v in labels if v["Label"] == "Foreground"])
+
+    foreground_labels_generated_from_ground_truth = []
+    if foreground_labelled_imgs < min_num_foregrounds: # Artificially boost the number of positive images.
+        max_iou_found = max([v['IOU'] for v in labels])
+        print(f"Not enough foreground images detected, only {len([v for v in labels if v['Label'] == 'Foreground'])} found, max iou = {max_iou_found}  create from ground truth. Generate another {min_num_foregrounds - foreground_labelled_imgs} images")
+        for j in range(min_num_foregrounds - foreground_labelled_imgs):
+            foreground_labels_generated_from_ground_truth.append(generate_box_from_ground_truth(base_image,ground_truth_bounding_box,img_path))
+    return foreground_labels_generated_from_ground_truth
+
+def generate_labeled_data(img_path:str,img_label_path:str):
+    """
+        Purpose: Labels data into foreground (E.g. my face) and background (everything else).
+                 cv2's inbuilt Selective search is used to generate images, most will be background.
+                 A minimum number of foreground labels are specified, more foreground images are generated from ground truth and added to the set.
+    """
+    base_image = cv2.imread(img_path)
+    ground_truth_bounding_box = read_img_labels(img_label_path)
+    rects = get_rectangles_of_interest_using_selective_serach(base_image)
 
     selective_search_labels = []
     for j, box in enumerate(rects):
@@ -119,17 +152,12 @@ def get_selective_search_labels(base_image,ground_truth_bounding_box,image_path)
         
         iou = get_iou(ground_truth_bounding_box, selected_search_box)
         if iou > config["Model"]["iouThreshhold"]:
-            print(f"[{i}][{j}] iou={iou} |{selected_search_box['x1']}|{selected_search_box['y1']}|{selected_search_box['x2']}|{selected_search_box['y2']}| ")
-
             selective_search_labels.append({
                 "ImagePath" : img_path
                 ,"Label" :"Foreground"
                 ,"IOU" : iou
                 ,"Box" : selected_search_box
                 })
-
-            #cv2.imshow("Cropped and Resized Image",cropped_resized_img)
-            #cv2.waitKey(50)
         else:
             selective_search_labels.append({
                 "ImagePath" : img_path
@@ -138,17 +166,14 @@ def get_selective_search_labels(base_image,ground_truth_bounding_box,image_path)
                 ,"Box" : selected_search_box
                 })
             
-    foreground_labelled_imgs = len([v for v in selective_search_labels if v["Label"] == "Foreground"])
-    if foreground_labelled_imgs < 20:
-        max_iou_found = max([v['IOU'] for v in selective_search_labels])
-        print(f"Not enough foreground images detected, only {len([v for v in selective_search_labels if v['Label'] == 'Foreground'])} found, max iou = {max_iou_found}  create from ground truth. Generate another {20 - foreground_labelled_imgs} images")
-        for j in range(20 - foreground_labelled_imgs):
-            selective_search_labels.append(generate_box_from_ground_truth(base_image,ground_truth_bounding_box,img_path))
-            
+    labels = selective_search_labels
 
-    cv2.destroyAllWindows()
+    foreground_labels_generated_from_ground_truth = create_more_foreground_samples_if_not_enough_exist(base_image,img_path,ground_truth_bounding_box,labels)
+    for foreground_gen_label in foreground_labels_generated_from_ground_truth:
+        labels.append(foreground_gen_label)
 
-    return selective_search_labels
+    print(f"img[{img_path}] generated {len(labels)} labels")
+    return labels
 
 def generate_box_from_ground_truth(base_image,ground_truth_bounding_box,img_path,max_measurement_diff=0.1,min_iou=0.9):
     """
@@ -191,23 +216,35 @@ def generate_box_from_ground_truth(base_image,ground_truth_bounding_box,img_path
         except:
             pass
 
+def get_area_of_box(box: dict):
+    """
+        Purpose: Gets the area of the box
+        Assumption 1: x1 < x2 & y1 < y2
+    """
+    width = box["x2"] - box["x1"]
+    height = box["y2"] - box["y1"]
+    area = width * height
+    return area
+
 if __name__ == "__main__":
     print("starting...")
     list_of_imgs, list_of_img_labels = get_list_of_data_and_labels()
 
-    search_data_for_each_image = []
+    labels_list = [generate_labeled_data(img_path,list_of_img_labels[i]) for i, img_path in enumerate(list_of_imgs)]
+
+    """
     for i, img_path in enumerate(list_of_imgs):
-        
         img_label_path = list_of_img_labels[i]
 
         base_image = cv2.imread(img_path)
         ground_truth_bounding_box = read_img_labels(img_label_path)
-        print(f"Analysing [{i}/{len(list_of_imgs)}] img shape = {base_image.shape} bounding box = |{ground_truth_bounding_box['x1']}|{ground_truth_bounding_box['y1']}|{ground_truth_bounding_box['x2']}|{ground_truth_bounding_box['y2']}| and image path ={img_path}")
-        search_data_for_each_image.append(get_selective_search_labels(base_image,ground_truth_bounding_box,img_path))
         
+        labels_list.append(generate_labeled_data(img_path,img_label_path))
+        print(f"Analysing [{i}/{len(list_of_imgs)}] img shape = {base_image.shape} bounding box = |{ground_truth_bounding_box['x1']}|{ground_truth_bounding_box['y1']}|{ground_truth_bounding_box['x2']}|{ground_truth_bounding_box['y2']}| and image path ={img_path}")
+    """ 
     
-    foreground_labels = [individual_box for img_results in search_data_for_each_image for individual_box in img_results if individual_box["Label"] == "Foreground"]
-    background_labels = [individual_box for img_results in search_data_for_each_image for individual_box in img_results if individual_box["Label"] == "Background"]
+    foreground_labels = [individual_box for img_results in labels_list for individual_box in img_results if individual_box["Label"] == "Foreground"]
+    background_labels = [individual_box for img_results in labels_list for individual_box in img_results if individual_box["Label"] == "Background"]
     
     pickle.dump(foreground_labels,open( config["PathToData"]+os.sep+"foreground_labels.p", "wb" ))
     pickle.dump(background_labels,open( config["PathToData"]+os.sep+"background_labels.p", "wb" ))
