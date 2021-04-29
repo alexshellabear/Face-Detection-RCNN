@@ -149,11 +149,8 @@ def draw_and_save_callback(event,mouseX,mouseY,flags,param):
             elif param == config["RightKey"]:
                 draw_and_save_label(mouseX,mouseY,box_finish_x_increase=1)
     elif first_point_selected == True:
-        print(f"DRAW {event}, {mouseX}:{mouseY} , {flags}, {param}  {flags}, {param}  first_point_selected = {first_point_selected}, left_mouse_down = {left_mouse_down}")
         drawn_img = img.copy() # Reset image
         cv2.rectangle(drawn_img,(X_start,Y_start),(mouseX,mouseY),(255,255,255),1)
-    else:
-        print(f"{event}, {mouseX}:{mouseY} , {flags}, {param}  {flags}, {param}  first_point_selected = {first_point_selected}, left_mouse_down = {left_mouse_down}")
 
 def get_list_of_unlabeled_data():
     """

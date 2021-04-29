@@ -17,10 +17,9 @@ import pickle
 """
 
 config = {
-    "InputFIle" : "1. Data Gen\\2. Data for Predictions\\WIN_20210426_12_27_45_Pro.jpg" #"1. Data Gen\\2. Data for Predictions\\WIN_20210423_11_21_30_Pro.jpg"
-    ,"ModelPath" : "2. Models\\vggtrained.h5"
+    "ModelPath" : "2. Models\\vggtrained 27 April 21.h5"
     ,"ClassifierInput" : (224,224)
-    , "ModelInput" : (224,224)
+    ,"ModelInput" : (224,224)
     ,"OutputSaveLocation" : "1. Data Gen\\3. Data From Predictions"
     ,"InputImageFiles" : "1. Data Gen\\2. Data for Predictions"
     ,"ValidImageFileExtensions" : [".jpg",".png"]
@@ -136,13 +135,19 @@ def get_list_of_images_not_predicted():
             list_of_imgs_with_no_saved_predictions.append(img_full_file_name)
 
     return list_of_imgs_with_no_saved_predictions 
-
+def cv2_resize(base_image,label):
+    """
+        Wrapper for cv2.resize for readability
+    """
+    return cv2.resize(base_image[label["Box"]['y1']:label["Box"]['y2'],label["Box"]['x1']:label["Box"]['x2']], config["ModelInput"], interpolation = cv2.INTER_AREA)
+    
 if __name__ == "__main__":
     
     images_to_predict = get_list_of_images_not_predicted()
+    #images_to_predict = ["1. Data Gen\\2. Data for Predictions\\WIN_20210427_16_04_34_Pro.jpg"]
     for input_img_file in images_to_predict:
         model = models.load_model(config["ModelPath"])
-        img = cv2.imread(config["InputFIle"])
+        img = cv2.imread(input_img_file)
 
         selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
         selective_search.setBaseImage(img)
@@ -151,12 +156,12 @@ if __name__ == "__main__":
 
         cropped_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in rects]
         prediction_ready_images = np.array([applications.vgg16.preprocess_input(img) for img in cropped_images])
+
+        #predictions = pickle.load(open("1. Data Gen\\3. Data From Predictions\\WIN_20210427_16_04_34_Pro.p","rb"))["Predictions"]
         predictions = model.predict(prediction_ready_images) # Takes the longest time!
 
-        #predictions = pickle.load(open("1. Data Gen\\3. Data From Predictions\\WIN_20210426_12_27_45_Pro.p","rb"))["Predictions"] # TOO delete me later
-        file_ext = os.path.splitext(config["InputFIle"])[-1].lower()
-        base_file_name = os.path.basename(config["InputFIle"])[:-len(file_ext)]
-
+        file_ext = os.path.splitext(input_img_file)[-1].lower()
+        base_file_name = os.path.basename(input_img_file)[:-len(file_ext)]
 
         predictions_data_dump = {
             "ImageName" :  base_file_name
@@ -173,6 +178,37 @@ if __name__ == "__main__":
 
         foreground_predictions_with_index = [[i,v[1]] for i,v in enumerate(list(predictions))]
         sorted_foreground_predictions_with_index = sorted(foreground_predictions_with_index, reverse=True,key=lambda x: x[1])
+
+
+        # Loop through top 25 selections and display them for 2 seconds each
+        #top_25_bounding_box_masks = [create_mask(img,rects[i],pixel_colour) for i,v in sorted_foreground_predictions_with_index[:25]]
+        exclude_images = [
+                "1. Data Gen\\1. Data\\WIN_20210426_12_27_45_Pro.jpg"
+                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_57_Pro.jpg"
+                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_54_Pro.jpg"
+                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_46_Pro.jpg"
+                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_48_Pro.jpg"
+                ,"1. Data Gen\\1. Data\\WIN_20210423_11_21_30_Pro.jpg"
+            ] # TODO delete later
+
+        drawn_img = img.copy()
+        cv2.imshow("Top 25",drawn_img)
+        cv2.waitKey(10000)
+        for index, prediction in sorted_foreground_predictions_with_index[:100]:
+            x,y,w,h = rects[index]
+            resized_cropped_image = cv2_resize(base_image,label)
+            cv2.rectangle(base_image, (x,y), (x+w,y+h), (255,255,255), 4) 
+            cv2.putText(base_image,f"Prob of My Face = {prediction}", 
+                (100,100), 
+                cv2.FONT_HERSHEY_SIMPLEX, 
+                1,
+                (255,255,255),
+                2)
+            
+            cv2.imshow("BaseImage",base_image)
+            cv2.imshow("ResizedImage",resized_cropped_image)
+            cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
         pixel_colour = int(255/25)
         bounding_box_masks = [create_mask(img,rects[i],pixel_colour) for i,v in sorted_foreground_predictions_with_index[:25]]

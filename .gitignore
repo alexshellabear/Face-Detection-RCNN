@@ -4,6 +4,8 @@
 *.h5
 *.p
 *.pptx
+*.webm
+*.mp4
 2. Models/**
 1. Data Gen/1. Data/**
 1. Data Gen/2. Data for Predictions/**

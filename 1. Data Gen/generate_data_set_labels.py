@@ -151,14 +151,14 @@ def generate_labeled_data(img_path:str,img_label_path:str):
         }
         
         iou = get_iou(ground_truth_bounding_box, selected_search_box)
-        if iou > config["Model"]["iouThreshhold"]:
+        if iou > config["Model"]["iouThreshhold"]: # You want this to be zero so there is no overlap in between yes and no
             selective_search_labels.append({
                 "ImagePath" : img_path
                 ,"Label" :"Foreground"
                 ,"IOU" : iou
                 ,"Box" : selected_search_box
                 })
-        else:
+        elif iou == 0: # You want this to be zero so there is no overlap in between yes and no
             selective_search_labels.append({
                 "ImagePath" : img_path
                 ,"Label" :"Background"
@@ -231,17 +231,6 @@ if __name__ == "__main__":
     list_of_imgs, list_of_img_labels = get_list_of_data_and_labels()
 
     labels_list = [generate_labeled_data(img_path,list_of_img_labels[i]) for i, img_path in enumerate(list_of_imgs)]
-
-    """
-    for i, img_path in enumerate(list_of_imgs):
-        img_label_path = list_of_img_labels[i]
-
-        base_image = cv2.imread(img_path)
-        ground_truth_bounding_box = read_img_labels(img_label_path)
-        
-        labels_list.append(generate_labeled_data(img_path,img_label_path))
-        print(f"Analysing [{i}/{len(list_of_imgs)}] img shape = {base_image.shape} bounding box = |{ground_truth_bounding_box['x1']}|{ground_truth_bounding_box['y1']}|{ground_truth_bounding_box['x2']}|{ground_truth_bounding_box['y2']}| and image path ={img_path}")
-    """ 
     
     foreground_labels = [individual_box for img_results in labels_list for individual_box in img_results if individual_box["Label"] == "Foreground"]
     background_labels = [individual_box for img_results in labels_list for individual_box in img_results if individual_box["Label"] == "Background"]

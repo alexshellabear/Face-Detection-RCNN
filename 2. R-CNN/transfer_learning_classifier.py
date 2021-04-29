@@ -151,6 +151,43 @@ def reduce_data_set(max_images_to_hold_in_memory,all_background_labels,all_foreg
     shuffled_and_culled_background_labels =  all_background_labels[:background_labels_to_retrieve]
     return shuffled_and_culled_background_labels, all_foreground_labels
 
+def show_bounding_box_label_and_resized_image(labels:list):
+    """
+        Goes through the x and y dataset and show
+        1) Bounding box
+        2) Resized Image
+        3) Label_name & IOU
+        4) Original Image path
+    """
+    exclude_images = [
+        "1. Data Gen\\1. Data\\WIN_20210426_12_27_45_Pro.jpg"
+        ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_57_Pro.jpg"
+        ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_54_Pro.jpg"
+        ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_46_Pro.jpg"
+        ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_48_Pro.jpg"
+        ,"1. Data Gen\\1. Data\\WIN_20210423_11_21_30_Pro.jpg"
+    ] # TODO delete later
+
+    for i, label in enumerate(labels):
+        print(f"[{i}] label={label['Label']} iou={label['IOU']} box={label['Box']} image path={label['ImagePath']}")
+        if not label['ImagePath'] in exclude_images:
+            base_image = cv2.imread(label["ImagePath"])
+            resized_cropped_image = cv2_resize(base_image,label)
+            cv2.rectangle(base_image, (label["Box"]["x1"],label["Box"]["y1"]), (label["Box"]["x2"],label["Box"]["y2"]), (255,255,255), 4) 
+            cv2.putText(base_image,f"{label['Label']} - IOU={label['IOU']}", 
+                (100,100), 
+                cv2.FONT_HERSHEY_SIMPLEX, 
+                1,
+                (255,255,255),
+                2)
+            
+            cv2.imshow("BaseImage",base_image)
+            cv2.imshow("ResizedImage",resized_cropped_image)
+            cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+
 if __name__ == "__main__":
     model = create_classifier_model()
     
@@ -159,17 +196,13 @@ if __name__ == "__main__":
 
     background_labels, foreground_labels = reduce_data_set(config["MaxImagesToHoldInMemory"],all_background_labels,all_foreground_labels)
 
+    # Test TODO delete later
+    #show_bounding_box_label_and_resized_image(sorted(background_labels, reverse=True,key=lambda x: x["ImagePath"]))
+
     all_potential_base_image_paths = [v["ImagePath"] for v in (background_labels + foreground_labels)]
     all_unique_base_image_paths = list(set(all_potential_base_image_paths))
     all_unique_base_image_paths_to_image = {v:cv2.imread(v) for v in all_unique_base_image_paths}
 
-    """ TODO check if removing this produces higher quality results
-    background_dataset_labels = []
-    for background in background_labels:
-        img_path = background["ImagePath"] 
-        if background["IOU"] == 0 and count_number_of_this_labels(background_dataset_labels,img_path) <  count_number_of_this_labels(foreground_labels,img_path):
-            background_dataset_labels.append(background)
-    """
     X_data = get_resized_images_for_data_set(all_unique_base_image_paths_to_image,foreground_labels + background_labels)
     Y_data = np.array([config["EncodedLabels"][v["Label"]] for v in (foreground_labels + background_labels)])
 
@@ -190,7 +223,7 @@ if __name__ == "__main__":
 
     model.compile(loss='categorical_crossentropy',
                 optimizer=optimizers.RMSprop(lr=2e-5),
-                metrics=['accuracy']
+                metrics=['val_acc']
                 )
 
     #history = model.fit_generator(generator= traindata, steps_per_epoch= 10, epochs= 1000, validation_data= testdata, validation_steps=2) # Removed callbacks
