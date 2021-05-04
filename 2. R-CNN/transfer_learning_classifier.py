@@ -23,6 +23,8 @@ import tensorflow as tf
 
 import cv2
 
+import datetime
+
 """
 
     Author: Alexander Shellabear
@@ -48,10 +50,13 @@ import cv2
         6) Could not save checkpoints because the metric used in compile was different in model checkpoint hence it did not work.
             https://stackoverflow.com/questions/61505749/tensorflowcan-save-best-model-only-with-val-acc-available-skipping
             To add to the accepted answer as I just struggled with this. Not only do you have to use the full the metric name, it must match for your model.compile, ModelCheckpoint, and EarlyStopping. I had one set to accuracy and the other two set to val_accuracy and it did not work.
+            Everything had to be the full word "accuray" why I do not know.
 """
 
 config = {
     "VGGModelPath" : "2. Models\\vggmodel.h5"
+    ,"ModelsDirectory" :"2. Models"
+    ,"BaseNameModelFile" : "ClassifierModelUpdates"
     ,"ModelInput" : (224,224)
     ,"MaxImagesToHoldInMemory" : 4000
     ,"EncodedLabels" : {
@@ -158,6 +163,8 @@ def show_bounding_box_label_and_resized_image(labels:list):
         2) Resized Image
         3) Label_name & IOU
         4) Original Image path
+
+        Note: This is a test function to see what data input is.
     """
     exclude_images = [
         "1. Data Gen\\1. Data\\WIN_20210426_12_27_45_Pro.jpg"
@@ -187,6 +194,25 @@ def show_bounding_box_label_and_resized_image(labels:list):
     cv2.destroyAllWindows()
 
 
+def create_todays_date_for_callback(folder:str, name_of_file:str):
+    """
+        Creates the name for training data to be saved. Has a sub folder with the start date of training and model names are put there. 
+    """
+    todays_date_string = datetime.datetime.today().strftime("%d %B %Y %Hhrs")
+    if not os.path.exists(f"{folder}{os.sep}{todays_date_string}"):
+        os.mkdir(f"{folder}{os.sep}{todays_date_string}")
+    file_path = f"{folder}{os.sep}{todays_date_string}{os.sep}{name_of_file}"
+    return file_path
+
+def create_name_for_training_history(folder:str):
+    """
+        Creates the name for training history data to be saved. Has a sub folder with the start date of training and model names are put there. 
+    """
+    todays_date_string = datetime.datetime.today().strftime("%d %B %Y %Hhrs")
+    if not os.path.exists(f"{folder}{os.sep}{todays_date_string}"):
+        os.mkdir(f"{folder}{os.sep}{todays_date_string}")
+    training_history_path = f"{folder}{os.sep}{todays_date_string}{os.sep}training_history.p"
+    return training_history_path
 
 if __name__ == "__main__":
     model = create_classifier_model()
@@ -195,9 +221,6 @@ if __name__ == "__main__":
     all_foreground_labels = pickle.load(open("1. Data Gen\\1. Data\\foreground_labels.p","rb"))
 
     background_labels, foreground_labels = reduce_data_set(config["MaxImagesToHoldInMemory"],all_background_labels,all_foreground_labels)
-
-    # Test TODO delete later
-    #show_bounding_box_label_and_resized_image(sorted(background_labels, reverse=True,key=lambda x: x["ImagePath"]))
 
     all_potential_base_image_paths = [v["ImagePath"] for v in (background_labels + foreground_labels)]
     all_unique_base_image_paths = list(set(all_potential_base_image_paths))
@@ -215,20 +238,19 @@ if __name__ == "__main__":
     tsdata = ImageDataGenerator(horizontal_flip=True, vertical_flip=True, rotation_range=90)
     testdata = tsdata.flow(x=x_test, y=y_test)
     
-    check_point = ModelCheckpoint(filepath="2. Models/weights-improvement-{epoch:02d}-{val_accuracy:.2f}.hdf5",
-                                              monitor="val_acc",
+    check_point = ModelCheckpoint(filepath=create_todays_date_for_callback(config["ModelsDirectory"], config["BaseNameModelFile"])+"-{epoch:02d}-{accuracy:.2f}.hdf5",
+                                              monitor="accuracy",
                                               mode="max",
                                               save_best_only=True,
                                               )
 
     model.compile(loss='categorical_crossentropy',
                 optimizer=optimizers.RMSprop(lr=2e-5),
-                metrics=['val_acc']
+                metrics=['accuracy']
                 )
 
-    #history = model.fit_generator(generator= traindata, steps_per_epoch= 10, epochs= 1000, validation_data= testdata, validation_steps=2) # Removed callbacks
-    #history = model.fit(x_train,y_train, batch_size=32, epochs=10, verbose=1,validation_data=(x_test, y_test) )
-    history = model.fit(traindata, batch_size=8, epochs=20, verbose=1,validation_data=testdata,callbacks=[check_point] ) # Known to work callbacks=[check_point]
-    model.save("vggtrained.h5")
-    # TODO save history
+    training_history_path = create_name_for_training_history(config["ModelsDirectory"])
+    history = model.fit(traindata, batch_size=8, epochs=30, verbose=1,validation_data=testdata,callbacks=[check_point] ) 
+
+    pickle.dump(history,open(training_history_path,"wb"))
     print("finished...")

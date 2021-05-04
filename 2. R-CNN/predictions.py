@@ -14,16 +14,25 @@ import pickle
     Lessons Learnt
         1) Must have tensorflow imported otherwise it will not run because of the lambda layer which comes from the tensorflow module
         2) When creating a pitch black zeros cv2 image use np.zeroes((width,height),dtype=np.uint8), it defaults to float which is between 0 and 1 not 0 - 255 like what you're used to
+        3) How to normalise an array of uint8
+            https://stackoverflow.com/questions/46689428/convert-np-array-of-type-float64-to-type-uint8-scaling-values/46689933
+        4) How to multiple a non-binary array to opencv
+            https://stackoverflow.com/questions/49879474/how-to-apply-a-non-binary-mask-on-an-image-in-opencv
+        5) How to deal with multiple boxes of similar area. 
+            Use non maximal surrpession 
+            https://www.pyimagesearch.com/2014/11/17/non-maximum-suppression-object-detection-python/
 """
 
 config = {
-    "ModelPath" : "2. Models\\vggtrained 27 April 21.h5"
+    "ModelPath" : "2. Models\\weights-improvement-20-0.90.hdf5"
     ,"ClassifierInput" : (224,224)
     ,"ModelInput" : (224,224)
     ,"OutputSaveLocation" : "1. Data Gen\\3. Data From Predictions"
     ,"InputImageFiles" : "1. Data Gen\\2. Data for Predictions"
     ,"ValidImageFileExtensions" : [".jpg",".png"]
     ,"ValidPredictionFileExtensions" : [".p"]
+    ,"ImageThreshold" : 0.98
+    ,"IouThreshold" : 0.5
 }
 
 def get_resized_img_to_model(image,box,resize_dimensions=(224,224)):
@@ -98,7 +107,6 @@ def get_nearest_box(img, previous_predictions_list,previous_boxes):
 def create_mask(base_img,box,pixel_colour:int):
     height, width, _ = base_img.shape
     x,y,w,h = box
-    print(box)
     mask = np.zeros((height, width),dtype=np.uint8)
     mask[y:y+h, x:x+w] = pixel_colour
     return mask
@@ -135,16 +143,232 @@ def get_list_of_images_not_predicted():
             list_of_imgs_with_no_saved_predictions.append(img_full_file_name)
 
     return list_of_imgs_with_no_saved_predictions 
-def cv2_resize(base_image,label):
+
+def display_selected_regions(img,predictions,rects,threshold_probability):
     """
-        Wrapper for cv2.resize for readability
+        Description: Orders the bounding boxes to the probability of finding a foreground and
+                    displays them one by one for the user to see. The user must press any key to progress.
+        Assumption 1: There are objects in the image that mean bounding boxes are selected which meet a 
+                    threshhold greater than the one specified
     """
-    return cv2.resize(base_image[label["Box"]['y1']:label["Box"]['y2'],label["Box"]['x1']:label["Box"]['x2']], config["ModelInput"], interpolation = cv2.INTER_AREA)
+    _, foreground_max = predictions.max(axis=0)
+    max_index = [i for i,v in enumerate(predictions) if v[1] == foreground_max][0]
+
+    foreground_predictions_with_index = [[i,v[1]] for i,v in enumerate(list(predictions))]
+    sorted_foreground_predictions_with_index = sorted(foreground_predictions_with_index, reverse=True,key=lambda x: x[1])
+
+    number_of_predictions_above_threshold = len([v for v in list(predictions) if v[1] > threshold_probability])
+
+    draw_img = img.copy()
+    for index, prediction in sorted_foreground_predictions_with_index[:number_of_predictions_above_threshold]:
+        x,y,w,h = rects[index]
+        resized_cropped_image = cv2.resize(draw_img[y:(y+h),x:(x+w)], (244,244), interpolation = cv2.INTER_AREA)
+        cv2.rectangle(draw_img, (x,y), (x+w,y+h), (255,255,255), 4) 
+        cv2.putText(draw_img,f"Prob of My Face = {prediction}", 
+            (100,100), 
+            cv2.FONT_HERSHEY_SIMPLEX, 
+            1,
+            (255,255,255),
+            2)
+        
+        cv2.imshow("BaseImage",draw_img)
+        cv2.imshow("ResizedImage",resized_cropped_image)
+        cv2.waitKey(0)
+        draw_img = img.copy()
+    cv2.destroyAllWindows()
+
+def display_heat_map_of_object(img,predictions,rects,threshold_probability):
+    """
+        Description: Creates a heatmap of the highest probabilities (all asume to be equal importance)
+    """
+    _, foreground_max = predictions.max(axis=0)
+    max_index = [i for i,v in enumerate(predictions) if v[1] == foreground_max][0]
+
+    foreground_predictions_with_index = [[i,v[1]] for i,v in enumerate(list(predictions))]
+    sorted_foreground_predictions_with_index = sorted(foreground_predictions_with_index, reverse=True,key=lambda x: x[1])
+
+    number_of_predictions_above_threshold = len([v for v in list(predictions) if v[1] > threshold_probability])
+
+    pixel_colour = int(255/number_of_predictions_above_threshold)
+    bounding_box_masks = [create_mask(img,rects[i],pixel_colour) for i,v in sorted_foreground_predictions_with_index[:number_of_predictions_above_threshold]]
+
+    heat_map = sum(bounding_box_masks)
+
+    cv2.imshow(f"Heat Map of Top {number_of_predictions_above_threshold} Search Areas",heat_map)
+    cv2.imshow(f"Original image",img)
+    cv2.waitKey(20000)
+    cv2.destroyAllWindows()
+
+def get_iou(bb1, bb2):
+    # Convert for readablity
+    bb1_x1, bb1_y1 = bb1[0], bb1[1]
+    bb1_x2 = bb1_x1 + bb1[2]
+    bb1_y2 = bb1_y1 + bb1[3]
+
+    bb2_x1, bb2_y1 = bb2[0], bb2[1]
+    bb2_x2 = bb2_x1 + bb2[2]
+    bb2_y2 = bb2_y1 + bb2[3]
+
+    x_left = max(bb1_x1, bb2_x1)
+    y_top = max(bb1_y1, bb2_y1)
+    x_right = min(bb1_x2, bb2_x2)
+    y_bottom = min(bb1_y2, bb2_y2)
+
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    bb1_area = (bb1_x2 - bb1_x1) * (bb1_y2 - bb1_y1)
+    bb2_area = (bb2_x2 - bb2_x1) * (bb2_y2 - bb2_y1)
+    iou = intersection_area / float(bb1_area + bb2_area - intersection_area)
     
+    return iou
+
+def area_of_rect(bounding_box):
+    """
+        Finds the area of a bounding box produced from selective search
+    """
+    _, _, width, height = bounding_box # Convert for readablity
+    return width * height
+
+def find_area_of_intersection(bb1, bb2):
+    """
+        Finds the area of which the bounding boxes intersect
+    """
+    # Convert for readablity
+    bb1_x1, bb1_y1 = bb1[0], bb1[1]
+    bb1_x2 = bb1_x1 + bb1[2]
+    bb1_y2 = bb1_y1 + bb1[3]
+
+    bb2_x1, bb2_y1 = bb2[0], bb2[1]
+    bb2_x2 = bb2_x1 + bb2[2]
+    bb2_y2 = bb2_y1 + bb2[3]
+
+    x_left = max(bb1_x1, bb2_x1)
+    y_top = max(bb1_y1, bb2_y1)
+    x_right = min(bb1_x2, bb2_x2)
+    y_bottom = min(bb1_y2, bb2_y2)
+
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+
+    return (x_right - x_left) * (y_bottom - y_top)
+
+def find_top_n_images_to_cover_area(rects,number_of_rects=20):
+    """
+        Finds n rectangles that do not intersect and cover the most area of an image
+    """ 
+    rects_from_highest_to_lowest_area = sorted(rects,key=area_of_rect,reverse=True)
+
+def divide_image_into_bounding_boxes(img,width_split=1,height_split=1):
+    """
+        This splits the image into width_split x height_split bounding boxes based upon the...
+            width_split: how many times to split the image in the x direction
+            height_split: how many times to split the image in the y direction
+        Assumption 1: The width_split and height_split must be greater than 0 and integers
+    """
+    assert width_split > 0 and height_split > 0
+    height, width, _ = img.shape
+
+    height_div = int(height/height_split)
+    width_div = int(width/width_split)
+
+    bounding_boxes = []
+    for x_i in range(width_split):
+        for y_i in range(height_split):
+            x = width_div * x_i
+            y = height_div * y_i
+            bounding_boxes.append([x,y,width_div,height_div])
+    return bounding_boxes
+
+def get_predictions_from_bounding_boxes(img,model,bounding_boxes):
+    """
+        One line wrapper to get prediction array from bounding boxes
+        Assumption 1: bounding box is an array in the following form [x,y,w,h]
+    """
+
+    cropped_resized_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in bounding_boxes]
+    prediction_ready_arrays = np.array([applications.vgg16.preprocess_input(resized_img) for resized_img in cropped_resized_images])
+
+    predictions = model.predict(prediction_ready_arrays)
+
+    return predictions, cropped_resized_images, bounding_boxes
+
+def non_max_suppression_fast(bounding_boxes, iou_threshhold):
+    """
+        When multiple similar bounding boxes are returned the final box can be calculated using non-maximal suppression
+        This was taken from Py-imagesearch - https://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
+
+        
+    """
+    # if there are no boxes, return an empty list
+    if len(bounding_boxes) == 0:
+        return []
+
+    # Convert into [x1,y1,x2,y2] 
+    boxes = np.array([[box[0],box[1],box[0]+box[2],box[1]+box[3]] for box in bounding_boxes])
+    # if the bounding boxes integers, convert them to floats --
+    # this is important since we'll be doing a bunch of divisions
+    if boxes.dtype.kind == "i":
+        boxes = boxes.astype("float")
+    # initialize the list of picked indexes    
+    pick = []
+    # grab the coordinates of the bounding boxes
+    x1 = boxes[:,0]
+    y1 = boxes[:,1]
+    x2 = boxes[:,2]
+    y2 = boxes[:,3]
+    # compute the area of the bounding boxes and sort the bounding
+    # boxes by the bottom-right y-coordinate of the bounding box
+    area = (x2 - x1 + 1) * (y2 - y1 + 1)
+    idxs = np.argsort(y2)
+    # keep looping while some indexes still remain in the indexes
+    # list
+    while len(idxs) > 0:
+        # grab the last index in the indexes list and add the
+        # index value to the list of picked indexes
+        last = len(idxs) - 1
+        i = idxs[last]
+        pick.append(i)
+        # find the largest (x, y) coordinates for the start of
+        # the bounding box and the smallest (x, y) coordinates
+        # for the end of the bounding box
+        xx1 = np.maximum(x1[i], x1[idxs[:last]])
+        yy1 = np.maximum(y1[i], y1[idxs[:last]])
+        xx2 = np.minimum(x2[i], x2[idxs[:last]])
+        yy2 = np.minimum(y2[i], y2[idxs[:last]])
+        # compute the width and height of the bounding box
+        w = np.maximum(0, xx2 - xx1 + 1)
+        h = np.maximum(0, yy2 - yy1 + 1)
+        # compute the ratio of overlap
+        overlap = (w * h) / area[idxs[:last]]
+        # delete all indexes from the index list that have
+        idxs = np.delete(idxs, np.concatenate(([last],
+            np.where(overlap > iou_threshhold)[0])))
+    # return only the bounding boxes that were picked using the
+    # integer data type
+    boxes_to_return = boxes[pick].astype("int")
+
+    #convert back to [x,y,w,h] format
+    return [[box[0],box[1],box[2]-box[0],box[3]-box[1]] for box in boxes_to_return]
+
+def display_all_bounding_boxes(img,bounding_boxes):
+    """
+        Description: Displays final bounding boxes by looping through and drawing rectangles on image
+    """
+
+    draw_img = img.copy()
+    for box in bounding_boxes:
+        x,y,w,h = box
+        resized_cropped_image = cv2.resize(draw_img[y:(y+h),x:(x+w)], (244,244), interpolation = cv2.INTER_AREA)
+        cv2.rectangle(draw_img, (x,y), (x+w,y+h), (255,255,255), 4)
+        
+    cv2.imshow("Final Objects",draw_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
 if __name__ == "__main__":
-    
     images_to_predict = get_list_of_images_not_predicted()
-    #images_to_predict = ["1. Data Gen\\2. Data for Predictions\\WIN_20210427_16_04_34_Pro.jpg"]
     for input_img_file in images_to_predict:
         model = models.load_model(config["ModelPath"])
         img = cv2.imread(input_img_file)
@@ -152,13 +376,16 @@ if __name__ == "__main__":
         selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
         selective_search.setBaseImage(img)
         selective_search.switchToSelectiveSearchFast() # lower likelihood of getting correct bounding boxes but quicker
-        rects = selective_search.process()
+        rects = selective_search.process() 
 
         cropped_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in rects]
         prediction_ready_images = np.array([applications.vgg16.preprocess_input(img) for img in cropped_images])
 
-        #predictions = pickle.load(open("1. Data Gen\\3. Data From Predictions\\WIN_20210427_16_04_34_Pro.p","rb"))["Predictions"]
-        predictions = model.predict(prediction_ready_images) # Takes the longest time!
+        predictions = model.predict(prediction_ready_images) # Takes the longest time, if there is anyway to optimise this then that will be your best bet
+
+        bounding_boxes_above_threshold = [rects[i] for i,pred in enumerate(predictions) if pred[1] > config["ImageThreshold"]]
+
+        final_bounding_box_objects = non_max_suppression_fast(bounding_boxes_above_threshold, config["IouThreshold"])
 
         file_ext = os.path.splitext(input_img_file)[-1].lower()
         base_file_name = os.path.basename(input_img_file)[:-len(file_ext)]
@@ -169,9 +396,12 @@ if __name__ == "__main__":
             ,"CV2Image" : img
             ,"Rectangles" : rects
             ,"Predictions" : predictions
+            ,"FinalBoundingBoxes" : final_bounding_box_objects
         }
         
         pickle.dump(predictions_data_dump,open( config["OutputSaveLocation"]+os.sep+predictions_data_dump["ImageName"]+".p", "wb" ))
+
+        display_all_bounding_boxes(img,final_bounding_box_objects)
 
         _, foreground_max = predictions.max(axis=0)
         max_index = [i for i,v in enumerate(predictions) if v[1] == foreground_max][0]
@@ -179,61 +409,9 @@ if __name__ == "__main__":
         foreground_predictions_with_index = [[i,v[1]] for i,v in enumerate(list(predictions))]
         sorted_foreground_predictions_with_index = sorted(foreground_predictions_with_index, reverse=True,key=lambda x: x[1])
 
+        display_selected_regions(img,predictions,rects,config["ImageThreshold"])
 
-        # Loop through top 25 selections and display them for 2 seconds each
-        #top_25_bounding_box_masks = [create_mask(img,rects[i],pixel_colour) for i,v in sorted_foreground_predictions_with_index[:25]]
-        exclude_images = [
-                "1. Data Gen\\1. Data\\WIN_20210426_12_27_45_Pro.jpg"
-                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_57_Pro.jpg"
-                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_54_Pro.jpg"
-                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_46_Pro.jpg"
-                ,"1. Data Gen\\1. Data\\WIN_20210425_17_03_48_Pro.jpg"
-                ,"1. Data Gen\\1. Data\\WIN_20210423_11_21_30_Pro.jpg"
-            ] # TODO delete later
-
-        drawn_img = img.copy()
-        cv2.imshow("Top 25",drawn_img)
-        cv2.waitKey(10000)
-        for index, prediction in sorted_foreground_predictions_with_index[:100]:
-            x,y,w,h = rects[index]
-            resized_cropped_image = cv2_resize(base_image,label)
-            cv2.rectangle(base_image, (x,y), (x+w,y+h), (255,255,255), 4) 
-            cv2.putText(base_image,f"Prob of My Face = {prediction}", 
-                (100,100), 
-                cv2.FONT_HERSHEY_SIMPLEX, 
-                1,
-                (255,255,255),
-                2)
-            
-            cv2.imshow("BaseImage",base_image)
-            cv2.imshow("ResizedImage",resized_cropped_image)
-            cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-        pixel_colour = int(255/25)
-        bounding_box_masks = [create_mask(img,rects[i],pixel_colour) for i,v in sorted_foreground_predictions_with_index[:25]]
-        covered_area = sum(bounding_box_masks)
-        cv2.imshow("Heat Map of Top 25 Search Areas",covered_area)
-        cv2.waitKey(10000)
-        cv2.destroyAllWindows()
-
-        height, width, _ = img.shape
-        covered_area = np.zeros((height, width),dtype=np.uint8)
-        for i,mask in enumerate(bounding_box_masks):
-            index, _ = sorted_foreground_predictions_with_index[i]
-            x,y,w,h = rects[index]
-            covered_area[y:y+h, x:x+w] = covered_area[y:y+h, x:x+w] + pixel_colour
-        
-        for index_and_prediction in sorted_foreground_predictions_with_index[:100]:
-            index, prediction_result = index_and_prediction
-            shown_image = img.copy()
-            x,y,w,h = rects[index]
-            cv2.rectangle(shown_image,(x,y),(x+w,y+h),(255,255,255),1)
-            print(f"[{index}]={prediction_result}")
-            cv2.imshow(f"Heat Map of top",shown_image)
-            cv2.waitKey(1000)
-
-        cv2.destroyAllWindows()
+        display_heat_map_of_object(img,predictions,rects,config["ImageThreshold"])
         
     print("Finishing")
 
