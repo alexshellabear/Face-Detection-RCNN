@@ -51,6 +51,7 @@ import datetime
             https://stackoverflow.com/questions/61505749/tensorflowcan-save-best-model-only-with-val-acc-available-skipping
             To add to the accepted answer as I just struggled with this. Not only do you have to use the full the metric name, it must match for your model.compile, ModelCheckpoint, and EarlyStopping. I had one set to accuracy and the other two set to val_accuracy and it did not work.
             Everything had to be the full word "accuray" why I do not know.
+        7) Sometimes you have way to much data, cull the data or save data to disk to be extracted
 """
 
 config = {
@@ -146,15 +147,28 @@ def create_classifier_model():
 
     return model
 
-def reduce_data_set(max_images_to_hold_in_memory,all_background_labels,all_foreground_labels):
+def reduce_data_set(max_images_to_hold_in_memory,all_background_labels,all_foreground_labels,desired_ratio=0.3):
     """
         Reduces the number of data to that allowed by the computer
+        desired_ratio: The ratio of foreground / background labels. Must be less than 1 and greater than 0
         Assumption 1: The number of foreground labels is significantly less than the background labels
+        Assumption 2: The number of foreground labels + background labels is more than the max images that can be held in memory
     """
-    background_labels_to_retrieve = max_images_to_hold_in_memory - len(all_foreground_labels)
+    assert desired_ratio > 0 and desired_ratio < 1 
+    
+    
+    target_foreground_labels = int(max_images_to_hold_in_memory * desired_ratio)
+    if len(all_foreground_labels) > target_foreground_labels:
+        target_background_labels = int(max_images_to_hold_in_memory * (1 - desired_ratio))
+    else:
+        target_foreground_labels = len(all_foreground_labels)
+        target_background_labels = max_images_to_hold_in_memory - len(all_foreground_labels)
+
+    random.shuffle(all_foreground_labels)
     random.shuffle(all_background_labels)
-    shuffled_and_culled_background_labels =  all_background_labels[:background_labels_to_retrieve]
-    return shuffled_and_culled_background_labels, all_foreground_labels
+    shuffled_and_culled_background_labels =  all_background_labels[:target_background_labels]
+    shuffled_and_culled_foreground_labels = all_foreground_labels[:target_foreground_labels]
+    return shuffled_and_culled_background_labels, shuffled_and_culled_foreground_labels
 
 def show_bounding_box_label_and_resized_image(labels:list):
     """

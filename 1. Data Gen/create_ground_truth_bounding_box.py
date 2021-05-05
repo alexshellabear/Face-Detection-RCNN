@@ -1,6 +1,8 @@
 import cv2
 import os
 
+from win32api import GetSystemMetrics # Asssume user is using windows
+
 """
     Author: Alexander Shellabear
     Email: alexshellabear@gmail.com
@@ -31,6 +33,8 @@ import os
         3) How to detect shift key press using waitKey in cv2
             https://www.reddit.com/r/learnpython/comments/6vapuy/how_do_i_detect_key_presses_and_mouse_clicks_in/
             https://stackoverflow.com/questions/54846803/how-to-detect-shift-or-ctrl-with-arrow-keys-when-using-the-waitkeyex
+        4) Didn't account for the screen size being so different from pixel size. Resize image accordingly to fit screen size.
+        5) Trying to load all the images into memory at once uses heaps of memory. Instead iterate through to save space
 
     TODO When using buttons the last known position of the mouse is off the screen. 
 """
@@ -181,18 +185,54 @@ def display_tutorial():
         Description: Displays a tutorial image which shows how to use the labelling tool until any key is pressed.
     """
     tutorial_image = cv2.imread(config["PathToTutorial"])
-    cv2.imshow(config["WindowName"])
+    cv2.imshow(config["WindowName"],tutorial_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+def scale_images_to_fit_screen(list_of_imgs):
+    """
+    """
+    screen_width =  GetSystemMetrics(0)
+    screen_height = GetSystemMetrics(1)
+
+    image_shapes = [cv2.imread(img_path).shape for img_path in list_of_imgs]
+
+    for index,shape in enumerate(image_shapes):
+        height, width, _ = shape
+        height_scale, width_scale,scale = [1.0,1.0,1.0] # Set the scale to 0
+
+        print(f"screen height is {screen_height} but image height is {height} hence screen height is {screen_height/height} x smaller")
+        # Find how much to reduce the image in the width and height
+        if height > screen_height:
+            height_scale = screen_height/height
+        print(f"screen width is {screen_width} but image width is {width} hence screen width is {screen_width/width} x smaller")
+        if width > screen_width:
+            width_scale = screen_width/width
+
+        # Find the maximum reduction
+        if height_scale < width_scale and height_scale < 1 :
+            scale = height_scale 
+        elif width_scale < height_scale and width_scale < 1: # Else scale will be the same
+            scale = width_scale
+        
+
+        if scale < 1:
+            print(f"resizing from ({width},{height}) ratio=[{width/height}] to {(int(width*scale),int(height*scale))} ratio=[{int(width*scale)/int(height*scale)}]")
+            resize_dimension = (int(width*scale),int(height*scale))
+            img = cv2.imread(list_of_imgs[index])
+            img = cv2.resize(img, resize_dimension, interpolation = cv2.INTER_AREA)
+            cv2.imwrite(list_of_imgs[index],img)
+        else:
+            print(f"Not resizing image")
 
 if __name__ == "__main__":
     print('starting...')
-
+    
     display_tutorial()
 
     list_of_imgs = get_list_of_unlabeled_data()
-    
+    scale_images_to_fit_screen(list_of_imgs)
+
     for img_path in list_of_imgs:
         first_point_selected = False
         box_drawn = False

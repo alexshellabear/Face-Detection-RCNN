@@ -25,6 +25,8 @@ import pickle
             Using the precicted samples from the first iteration of training so I could determine what the model was. Hence the dataset needs to be more representative
             proposed features
                 Scale
+        6) When labeling my face for the first time I was selecting other objects and grouping them such as my hair & hat.
+            Removing this made it easier for the selective search to find occurances of my face
 
 """
 config = {
