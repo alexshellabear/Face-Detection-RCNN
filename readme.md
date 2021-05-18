@@ -5,10 +5,10 @@ Alex Face Detector
 This project is a custom R-CNN to develop bounding box object detection.
 
 There are 4 key components
-    1) Generate ground truths: Label the images
-    2) Generate a dataset: Take ground truth labels and form a dataset from it
-    3) Transfer learning: Use pre-existing weights of VGG16 imagenet and customise it to this dataset
-    4) Predict: Use the trained model to make predictions on incoming images
+1) Generate ground truths: Label the images
+2) Generate a dataset: Take ground truth labels and form a dataset from it
+3) Transfer learning: Use pre-existing weights of VGG16 imagenet and customise it to this dataset
+4) Predict: Use the trained model to make predictions on incoming images
 
 # Environment set up: #
 How to set up the right environment to run the program

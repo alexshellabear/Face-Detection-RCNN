@@ -367,16 +367,24 @@ def display_all_bounding_boxes(img,bounding_boxes):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+def generate_proposed_regions(img,limit_of_proposals= 2000):
+    """
+        Generate proposed regions using selective search and limits number of rectangles returned
+    """
+    selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
+    selective_search.setBaseImage(img)
+    selective_search.switchToSelectiveSearchFast() # lower likelihood of getting correct bounding boxes but quicker
+    all_proposed_rectangles = selective_search.process() 
+    limited_proposed_recentagles = [v for i,v in enumerate(all_proposed_rectangles) if i < limit_of_proposals]
+    return limited_proposed_recentagles
+
 if __name__ == "__main__":
     images_to_predict = get_list_of_images_not_predicted()
+    model = models.load_model(config["ModelPath"])
     for input_img_file in images_to_predict:
-        model = models.load_model(config["ModelPath"])
         img = cv2.imread(input_img_file)
 
-        selective_search = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
-        selective_search.setBaseImage(img)
-        selective_search.switchToSelectiveSearchFast() # lower likelihood of getting correct bounding boxes but quicker
-        rects = selective_search.process() 
+        rects = generate_proposed_regions(img)
 
         cropped_images = [get_resized_img_to_model(img,box,resize_dimensions=config["ClassifierInput"]) for box in rects]
         prediction_ready_images = np.array([applications.vgg16.preprocess_input(img) for img in cropped_images])

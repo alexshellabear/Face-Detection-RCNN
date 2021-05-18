@@ -262,6 +262,7 @@ if __name__ == "__main__":
                 optimizer=optimizers.RMSprop(lr=2e-5),
                 metrics=['accuracy']
                 )
+                // hellow this is mitchell  what is comment?
 
     training_history_path = create_name_for_training_history(config["ModelsDirectory"])
     history = model.fit(traindata, batch_size=8, epochs=30, verbose=1,validation_data=testdata,callbacks=[check_point] ) 
